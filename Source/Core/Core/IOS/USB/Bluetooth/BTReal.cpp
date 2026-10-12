@@ -131,6 +131,16 @@ std::optional<IPCReply> BluetoothRealDevice::IOCtlV(const IOCtlVRequest& request
 
     auto& memory = GetSystem().GetMemory();
     const auto payload = memory.GetSpanForAddress(cmd->data_address).first(cmd->length);
+
+    static unsigned long long diagnostic_outgoing_acl = 0;
+    ++diagnostic_outgoing_acl;
+
+    if (diagnostic_outgoing_acl % 200 == 0)
+    {
+      INFO_LOG_FMT(IOS_WIIMOTE, "[BTDIAG] ACL OUT count={} size={} endpoint=0x{:02x}",
+                   diagnostic_outgoing_acl, payload.size(), cmd->endpoint);
+    }
+
     m_lib_usb_bt_adapter->ScheduleBulkTransfer(cmd->endpoint, payload, GetTargetTime());
     break;
   }
@@ -203,6 +213,22 @@ auto BluetoothRealDevice::ProcessHCIEvent(BufferType buffer) -> BufferType
     return buffer;
 
   const auto event = buffer[0];
+  static unsigned long long diagnostic_completion_events = 0;
+
+  if (event == 0x13)
+  {
+    ++diagnostic_completion_events;
+    if (diagnostic_completion_events % 200 == 0)
+    {
+      INFO_LOG_FMT(IOS_WIIMOTE, "[BTDIAG] HCI completed-packets events={}",
+                   diagnostic_completion_events);
+    }
+  }
+  else if (event == 0x03 || event == 0x05 || event == 0x07)
+  {
+    INFO_LOG_FMT(IOS_WIIMOTE, "[BTDIAG] HCI event=0x{:02x} size={}", event, buffer.size());
+  }
+
   if (event == HCI_EVENT_LINK_KEY_NOTIFICATION)
   {
     INFO_LOG_FMT(IOS_WIIMOTE, "HCI_EVENT_LINK_KEY_NOTIFICATION");
@@ -305,6 +331,14 @@ void BluetoothRealDevice::TryToFillACLEndpoint()
   const auto buffer = m_lib_usb_bt_adapter->ReceiveACLData();
   if (buffer.empty())
     return;
+
+  static unsigned long long diagnostic_incoming_acl = 0;
+  ++diagnostic_incoming_acl;
+  if (diagnostic_incoming_acl % 200 == 0)
+  {
+    INFO_LOG_FMT(IOS_WIIMOTE, "[BTDIAG] ACL IN count={} size={}",
+                 diagnostic_incoming_acl, buffer.size());
+  }
 
   assert(buffer.size() <= m_acl_endpoint->length);
 
