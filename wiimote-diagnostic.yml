@@ -1,0 +1,63 @@
+
+name: Wii Remote Diagnostic Build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-2022
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout Dolphin
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Show source revision
+        shell: pwsh
+        run: |
+          git log -1 --format="%H %s"
+          cmake --version
+
+      - name: Configure Windows x64
+        shell: pwsh
+        run: |
+          cmake -S . -B build `
+            -G "Visual Studio 17 2022" `
+            -A x64
+
+      - name: Build Release
+        shell: pwsh
+        run: |
+          cmake --build build `
+            --config Release `
+            --parallel 4
+
+      - name: Collect Dolphin files
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem build -Recurse `
+            -Filter Dolphin.exe -File |
+            Select-Object -First 1
+
+          if (-not $exe) {
+            throw "Dolphin.exe not found."
+          }
+
+          Write-Host "Found $($exe.FullName)"
+
+          New-Item -ItemType Directory `
+            -Path artifact -Force | Out-Null
+
+          Copy-Item "$($exe.Directory.FullName)\*" `
+            -Destination artifact -Recurse -Force
+
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: dolphin-2606a-wiimote-diagnostic
+          path: artifact/
+          if-no-files-found: error
